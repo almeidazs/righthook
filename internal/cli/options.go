@@ -73,6 +73,25 @@ type ResolvedInstallOptions struct {
 	Interactive bool
 }
 
+type MigrateOptions struct {
+	Target           string
+	Path             string
+	ConfigPath       string
+	DryRun           bool
+	KeepTargetConfig bool
+	Write            bool
+}
+
+type ResolvedMigrateOptions struct {
+	Target           string
+	Path             string
+	ConfigPath       string
+	DryRun           bool
+	KeepTargetConfig bool
+	Write            bool
+	Interactive      bool
+}
+
 type UninstallOptions struct {
 	Hook         string
 	All          bool
@@ -268,6 +287,31 @@ func ResolveInstallOptions(opts InstallOptions, rt Runtime) (ResolvedInstallOpti
 		Path:        path,
 		ConfigPath:  strings.TrimSpace(opts.ConfigPath),
 		Interactive: interactive,
+	}, nil
+}
+
+func ResolveMigrateOptions(opts MigrateOptions, rt Runtime) (ResolvedMigrateOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedMigrateOptions{}, err
+	}
+
+	target := strings.ToLower(strings.TrimSpace(opts.Target))
+	switch target {
+	case "lefthook", "husky":
+	default:
+		return ResolvedMigrateOptions{}, fmt.Errorf("unsupported migration target %q", opts.Target)
+	}
+
+	interactive := rt.Stdin != nil && term.IsTerminal(int(rt.Stdin.Fd())) && rt.Stdout != nil
+	return ResolvedMigrateOptions{
+		Target:           target,
+		Path:             path,
+		ConfigPath:       strings.TrimSpace(opts.ConfigPath),
+		DryRun:           opts.DryRun,
+		KeepTargetConfig: opts.KeepTargetConfig,
+		Write:            opts.Write,
+		Interactive:      interactive,
 	}, nil
 }
 
