@@ -35,6 +35,7 @@ type Result struct {
 	ConfigPath string
 	Hook       string
 	Jobs       []JobResult
+	Duration   time.Duration
 }
 
 type JobResult struct {
@@ -44,6 +45,12 @@ type JobResult struct {
 	Status       string
 	CacheEnabled bool
 	Reason       string
+	Duration     time.Duration
+}
+
+type commandExpansion struct {
+	Command                 string
+	HasEmptyFilePlaceholder bool
 }
 
 type Executor struct {
@@ -52,11 +59,17 @@ type Executor struct {
 	Stderr io.Writer
 }
 
-type fileSets struct {
-	All      []string
-	Changed  []string
-	Staged   []string
-	Affected map[string][]string
+type fileInventory struct {
+	executor     Executor
+	all          []string
+	changed      []string
+	staged       []string
+	untracked    []string
+	affected     map[string][]string
+	hasAll       bool
+	hasChanged   bool
+	hasStaged    bool
+	hasUntracked bool
 }
 
 var execCommand = func(name string, args ...string) *exec.Cmd {
@@ -74,85 +87,107 @@ func (e Executor) Run(cfg config.File, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	files, err := e.collectFiles()
-	if err != nil {
-		return Result{}, err
-	}
-
 	res := Result{
 		ConfigPath: opts.ConfigPath,
 		Hook:       opts.Hook,
 		Jobs:       make([]JobResult, 0, len(jobs)),
 	}
+	startedAt := time.Now()
+	files := newFileInventory(e)
+
+	env, err := e.prepareEnvironment(cfg, opts, files, jobs)
+	if err != nil {
+		return res, err
+	}
+	defer func() {
+		if cleanupErr := env.cleanup(); cleanupErr != nil {
+			fmt.Fprintf(e.stderr(), "righthook cleanup failed: %v\n", cleanupErr)
+		}
+	}()
 
 	for _, selected := range jobs {
-		runFiles, err := e.filesForJob(selected.Job, cfg, opts, &files)
+		jobStartedAt := time.Now()
+
+		runFiles, err := e.filesForJob(selected.Job, opts, files)
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
-		command, err := expandCommand(selected.Job.Run, runFiles, files.Staged, files.Changed, opts.Args)
+		expansion, err := expandCommand(selected.Job.Run, runFiles, files, opts.Args)
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
 		jobResult := JobResult{
 			Name:         selected.Name,
-			Command:      command,
+			Command:      expansion.Command,
 			Files:        append([]string(nil), runFiles...),
 			CacheEnabled: cacheEnabled(cfg, selected.Job, opts),
 			Status:       "pending",
 		}
 
+		if expansion.HasEmptyFilePlaceholder {
+			jobResult.Status = "skipped"
+			jobResult.Reason = "no files matched command placeholders"
+			jobResult.Duration = time.Since(jobStartedAt)
+			res.Jobs = append(res.Jobs, jobResult)
+			continue
+		}
+
 		if opts.DryRun {
 			jobResult.Status = "dry-run"
+			jobResult.Duration = time.Since(jobStartedAt)
 			res.Jobs = append(res.Jobs, jobResult)
 			continue
 		}
 
 		if jobResult.CacheEnabled {
-			hit, err := e.cacheHit(cfg, opts.Hook, selected.Name, command, runFiles)
+			hit, err := e.cacheHit(cfg, opts.Hook, selected.Name, expansion.Command, runFiles)
 			if err != nil {
 				return res, err
 			}
 			if hit {
 				jobResult.Status = "cached"
 				jobResult.Reason = "cache hit"
+				jobResult.Duration = time.Since(jobStartedAt)
 				res.Jobs = append(res.Jobs, jobResult)
 				continue
 			}
 		}
 
-		if strings.TrimSpace(command) == "" {
+		if strings.TrimSpace(expansion.Command) == "" {
 			jobResult.Status = "skipped"
 			jobResult.Reason = "empty command after placeholder expansion"
+			jobResult.Duration = time.Since(jobStartedAt)
 			res.Jobs = append(res.Jobs, jobResult)
 			continue
 		}
 
-		if err := e.executeCommand(command, opts); err != nil {
+		if err := e.executeCommand(expansion.Command, env.workDir, opts); err != nil {
 			jobResult.Status = "failed"
+			jobResult.Duration = time.Since(jobStartedAt)
 			res.Jobs = append(res.Jobs, jobResult)
 			return res, err
 		}
 
 		if selected.Job.StageFixed && len(runFiles) > 0 {
-			args := append([]string{"add", "--"}, runFiles...)
-			if err := e.git(args...); err != nil {
+			if err := env.syncStageFixed(runFiles); err != nil {
 				return res, fmt.Errorf("%s: stage_fixed git add failed: %w", selected.Name, err)
 			}
 		}
 
 		if jobResult.CacheEnabled {
-			if err := e.writeCache(cfg, opts.Hook, selected.Name, command, runFiles); err != nil {
+			if err := e.writeCache(cfg, opts.Hook, selected.Name, expansion.Command, runFiles); err != nil {
 				return res, err
 			}
 		}
 
 		jobResult.Status = "ran"
+		jobResult.Duration = time.Since(jobStartedAt)
 		res.Jobs = append(res.Jobs, jobResult)
 	}
 
+	res.Duration = time.Since(startedAt)
 	return res, nil
 }
 
@@ -198,28 +233,83 @@ func toSet(values []string) map[string]bool {
 	return set
 }
 
-func (e Executor) collectFiles() (fileSets, error) {
-	all, err := e.gitLines("ls-files")
-	if err != nil {
-		return fileSets{}, fmt.Errorf("list tracked files: %w", err)
+func newFileInventory(executor Executor) *fileInventory {
+	return &fileInventory{
+		executor: executor,
+		affected: map[string][]string{},
 	}
-	changed, err := e.gitLines("diff", "--name-only")
-	if err != nil {
-		return fileSets{}, fmt.Errorf("list changed files: %w", err)
-	}
-	staged, err := e.gitLines("diff", "--cached", "--name-only")
-	if err != nil {
-		return fileSets{}, fmt.Errorf("list staged files: %w", err)
-	}
-	return fileSets{
-		All:      uniqueSorted(all),
-		Changed:  uniqueSorted(changed),
-		Staged:   uniqueSorted(staged),
-		Affected: map[string][]string{},
-	}, nil
 }
 
-func (e Executor) filesForJob(job config.Job, cfg config.File, opts Options, files *fileSets) ([]string, error) {
+func (f *fileInventory) All() ([]string, error) {
+	if f.hasAll {
+		return append([]string(nil), f.all...), nil
+	}
+	all, err := f.executor.gitLines("ls-files")
+	if err != nil {
+		return nil, fmt.Errorf("list tracked files: %w", err)
+	}
+	f.all = uniqueSorted(all)
+	f.hasAll = true
+	return append([]string(nil), f.all...), nil
+}
+
+func (f *fileInventory) Changed() ([]string, error) {
+	if f.hasChanged {
+		return append([]string(nil), f.changed...), nil
+	}
+	changed, err := f.executor.gitLines("diff", "--name-only")
+	if err != nil {
+		return nil, fmt.Errorf("list changed files: %w", err)
+	}
+	f.changed = uniqueSorted(changed)
+	f.hasChanged = true
+	return append([]string(nil), f.changed...), nil
+}
+
+func (f *fileInventory) Staged() ([]string, error) {
+	if f.hasStaged {
+		return append([]string(nil), f.staged...), nil
+	}
+	staged, err := f.executor.gitLines("diff", "--cached", "--name-only")
+	if err != nil {
+		return nil, fmt.Errorf("list staged files: %w", err)
+	}
+	f.staged = uniqueSorted(staged)
+	f.hasStaged = true
+	return append([]string(nil), f.staged...), nil
+}
+
+func (f *fileInventory) Untracked() ([]string, error) {
+	if f.hasUntracked {
+		return append([]string(nil), f.untracked...), nil
+	}
+	untracked, err := f.executor.gitLines("ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked files: %w", err)
+	}
+	f.untracked = uniqueSorted(untracked)
+	f.hasUntracked = true
+	return append([]string(nil), f.untracked...), nil
+}
+
+func (f *fileInventory) Affected(base string) ([]string, error) {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "origin/main"
+	}
+	if cached, ok := f.affected[base]; ok {
+		return append([]string(nil), cached...), nil
+	}
+	affected, err := f.executor.gitLines("diff", "--name-only", base+"...HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("resolve affected files from base %s: %w", base, err)
+	}
+	selected := uniqueSorted(affected)
+	f.affected[base] = selected
+	return append([]string(nil), selected...), nil
+}
+
+func (e Executor) filesForJob(job config.Job, opts Options, files *fileInventory) ([]string, error) {
 	source := ""
 	switch {
 	case opts.Staged:
@@ -235,30 +325,21 @@ func (e Executor) filesForJob(job config.Job, cfg config.File, opts Options, fil
 	}
 
 	var selected []string
+	var err error
 	switch source {
 	case "staged":
-		selected = files.Staged
+		selected, err = files.Staged()
 	case "changed":
-		selected = files.Changed
+		selected, err = files.Changed()
 	case "affected":
-		base := strings.TrimSpace(job.Base)
-		if base == "" {
-			base = "origin/main"
-		}
-		if cached, ok := files.Affected[base]; ok {
-			selected = cached
-		} else {
-			affected, err := e.gitLines("diff", "--name-only", base+"...HEAD")
-			if err != nil {
-				return nil, fmt.Errorf("resolve affected files from base %s: %w", base, err)
-			}
-			selected = uniqueSorted(affected)
-			files.Affected[base] = selected
-		}
+		selected, err = files.Affected(job.Base)
 	case "all", "":
-		selected = files.All
+		selected, err = files.All()
 	default:
 		return nil, fmt.Errorf("unsupported files selector %q", source)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return filterGlobs(selected, job.Glob), nil
@@ -292,18 +373,40 @@ func globMatches(pattern, path string) bool {
 	return false
 }
 
-func expandCommand(command string, resolvedFiles, stagedFiles, changedFiles, hookArgs []string) (string, error) {
+func expandCommand(command string, resolvedFiles []string, files *fileInventory, hookArgs []string) (commandExpansion, error) {
 	replaced := command
-	replaced = strings.ReplaceAll(replaced, "{staged}", shellJoin(stagedFiles))
-	replaced = strings.ReplaceAll(replaced, "{changed}", shellJoin(changedFiles))
+	hasEmptyFilePlaceholder := false
 	replaced = strings.ReplaceAll(replaced, "{files}", shellJoin(resolvedFiles))
+	if strings.Contains(command, "{files}") && len(resolvedFiles) == 0 {
+		hasEmptyFilePlaceholder = true
+	}
+	if strings.Contains(replaced, "{staged}") {
+		stagedFiles, err := files.Staged()
+		if err != nil {
+			return commandExpansion{}, err
+		}
+		replaced = strings.ReplaceAll(replaced, "{staged}", shellJoin(stagedFiles))
+		if len(stagedFiles) == 0 {
+			hasEmptyFilePlaceholder = true
+		}
+	}
+	if strings.Contains(replaced, "{changed}") {
+		changedFiles, err := files.Changed()
+		if err != nil {
+			return commandExpansion{}, err
+		}
+		replaced = strings.ReplaceAll(replaced, "{changed}", shellJoin(changedFiles))
+		if len(changedFiles) == 0 {
+			hasEmptyFilePlaceholder = true
+		}
+	}
 	if strings.Contains(replaced, "{commit_msg_file}") {
 		if len(hookArgs) == 0 || strings.TrimSpace(hookArgs[0]) == "" {
-			return "", errors.New("hook requires {commit_msg_file} but no commit message file argument was provided")
+			return commandExpansion{}, errors.New("hook requires {commit_msg_file} but no commit message file argument was provided")
 		}
 		replaced = strings.ReplaceAll(replaced, "{commit_msg_file}", shellEscape(hookArgs[0]))
 	}
-	return replaced, nil
+	return commandExpansion{Command: replaced, HasEmptyFilePlaceholder: hasEmptyFilePlaceholder}, nil
 }
 
 func shellJoin(values []string) string {
@@ -387,9 +490,9 @@ func parseTTL(value string) (time.Duration, error) {
 	return time.ParseDuration(value)
 }
 
-func (e Executor) executeCommand(command string, opts Options) error {
+func (e Executor) executeCommand(command, workDir string, opts Options) error {
 	cmd := execCommand("sh", "-c", command)
-	cmd.Dir = e.Repo.Root
+	cmd.Dir = workDir
 	cmd.Stdout = e.stdout()
 	cmd.Stderr = e.stderr()
 	cmd.Env = append(os.Environ(),

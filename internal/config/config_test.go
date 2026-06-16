@@ -37,3 +37,17 @@ func TestValidateAllowsDisabledJobWithoutRun(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 }
+
+func TestValidateRejectsUnsupportedValues(t *testing.T) {
+	cfg := New(true, "smart")
+	cfg.Output.Mode = "loud"
+	cfg.Hooks["pre-commit"] = Hook{
+		Jobs: map[string]Job{
+			"lint": {Run: "echo ok", Files: "mystery"},
+		},
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error for unsupported values")
+	}
+}

@@ -56,6 +56,16 @@ type Job struct {
 	Cache      bool     `json:"cache,omitempty" yaml:"cache,omitempty" toml:"cache,omitempty"`
 }
 
+var (
+	validOutputModes       = map[string]bool{"compact": true, "verbose": true}
+	validSafetyIsolation   = map[string]bool{"smart": true, "fast": true, "strict": true, "off": true}
+	validPartialStaging    = map[string]bool{"preserve": true, "allow": true, "forbid": true}
+	validUnstagedStrategy  = map[string]bool{"stash": true, "ignore": true, "fail": true}
+	validConflictPolicies  = map[string]bool{"explain": true, "warn": true, "fail": true, "ignore": true}
+	validFileSelectors     = map[string]bool{"all": true, "staged": true, "changed": true, "affected": true}
+	validJobScopeSelectors = map[string]bool{"affected": true}
+)
+
 func New(cacheEnabled bool, safetyMode string) File {
 	return File{
 		Version: "1",
@@ -72,6 +82,23 @@ func New(cacheEnabled bool, safetyMode string) File {
 		Safety: defaultSafety(safetyMode),
 		Hooks:  map[string]Hook{},
 	}
+}
+
+func WithDefaults(cfg File) File {
+	defaults := New(cfg.Cache.Enabled, "smart")
+	if cfg.Version == "" {
+		cfg.Version = defaults.Version
+	}
+	if strings.TrimSpace(cfg.Output.Mode) == "" {
+		cfg.Output.Mode = defaults.Output.Mode
+	}
+	if strings.TrimSpace(cfg.Cache.Dir) == "" {
+		cfg.Cache.Dir = defaults.Cache.Dir
+	}
+	if cfg.Safety == (SafetyConfig{}) {
+		cfg.Safety = defaults.Safety
+	}
+	return cfg
 }
 
 func defaultSafety(mode string) SafetyConfig {
@@ -123,6 +150,7 @@ func Decode(data []byte, format string) (File, error) {
 	if err != nil {
 		return File{}, err
 	}
+	cfg = WithDefaults(cfg)
 	return cfg, Validate(cfg)
 }
 
@@ -188,6 +216,21 @@ func Validate(cfg File) error {
 	if cfg.Version != "1" {
 		return fmt.Errorf("unsupported version %q", cfg.Version)
 	}
+	if mode := strings.TrimSpace(cfg.Output.Mode); mode != "" && !validOutputModes[mode] {
+		return fmt.Errorf("unsupported output.mode %q", cfg.Output.Mode)
+	}
+	if isolation := strings.TrimSpace(cfg.Safety.Isolation); isolation != "" && !validSafetyIsolation[isolation] {
+		return fmt.Errorf("unsupported safety.isolation %q", cfg.Safety.Isolation)
+	}
+	if partial := strings.TrimSpace(cfg.Safety.PartialStaging); partial != "" && !validPartialStaging[partial] {
+		return fmt.Errorf("unsupported safety.partial_staging %q", cfg.Safety.PartialStaging)
+	}
+	if strategy := strings.TrimSpace(cfg.Safety.UnstagedStrategy); strategy != "" && !validUnstagedStrategy[strategy] {
+		return fmt.Errorf("unsupported safety.unstaged_strategy %q", cfg.Safety.UnstagedStrategy)
+	}
+	if policy := strings.TrimSpace(cfg.Safety.OnConflict); policy != "" && !validConflictPolicies[policy] {
+		return fmt.Errorf("unsupported safety.on_conflict %q", cfg.Safety.OnConflict)
+	}
 	for hookName, hook := range cfg.Hooks {
 		if hookName == "" {
 			return fmt.Errorf("hook name cannot be empty")
@@ -198,6 +241,20 @@ func Validate(cfg File) error {
 			}
 			if job.IsEnabled() && strings.TrimSpace(job.Run) == "" {
 				return fmt.Errorf("job %s in %s has empty run command", jobName, hookName)
+			}
+			if files := strings.TrimSpace(job.Files); files != "" && !validFileSelectors[files] {
+				return fmt.Errorf("job %s in %s uses unsupported files selector %q", jobName, hookName, job.Files)
+			}
+			if scope := strings.TrimSpace(job.Scope); scope != "" && !validJobScopeSelectors[scope] {
+				return fmt.Errorf("job %s in %s uses unsupported scope %q", jobName, hookName, job.Scope)
+			}
+			if workspace := strings.TrimSpace(job.Workspace); workspace != "" && !validJobScopeSelectors[workspace] {
+				return fmt.Errorf("job %s in %s uses unsupported workspace %q", jobName, hookName, job.Workspace)
+			}
+			for _, pattern := range job.Glob {
+				if _, err := filepath.Match(pattern, "example"); err != nil {
+					return fmt.Errorf("job %s in %s has invalid glob %q: %w", jobName, hookName, pattern, err)
+				}
 			}
 		}
 	}

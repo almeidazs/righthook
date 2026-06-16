@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/almeidazs/righthook/internal/cli"
 	"github.com/almeidazs/righthook/internal/config"
@@ -43,14 +44,14 @@ func Run(raw cli.RunOptions, rt cli.Runtime) error {
 		Except:     opts.Except,
 		ConfigPath: configPath,
 	})
-	renderRun(rt, repo.Root, result, opts.DryRun)
+	renderRun(rt, repo.Root, cfg.Output, result, opts.DryRun)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func renderRun(rt cli.Runtime, repoRoot string, result runpkg.Result, dryRun bool) {
+func renderRun(rt cli.Runtime, repoRoot string, outputCfg config.OutputConfig, result runpkg.Result, dryRun bool) {
 	fmt.Fprintf(rt.Stdout, "\n◇ righthook run\n")
 	fmt.Fprintf(rt.Stdout, "│ repo: %s\n", repoRoot)
 	fmt.Fprintf(rt.Stdout, "│ config: %s\n", result.ConfigPath)
@@ -60,19 +61,35 @@ func renderRun(rt cli.Runtime, repoRoot string, result runpkg.Result, dryRun boo
 	} else {
 		fmt.Fprintln(rt.Stdout, "\n◆ Jobs")
 	}
+	showVerbose := outputCfg.Mode == "verbose" || dryRun
+	showTiming := outputCfg.Timing
+	hiddenSuccesses := 0
 	for _, job := range result.Jobs {
+		if !dryRun && !outputCfg.ShowSuccess && job.Status == "ran" {
+			hiddenSuccesses++
+			continue
+		}
 		fmt.Fprintf(rt.Stdout, "├─ %s [%s]\n", job.Name, job.Status)
-		if job.Command != "" {
+		if showVerbose && job.Command != "" {
 			fmt.Fprintf(rt.Stdout, "│  command: %s\n", job.Command)
 		}
-		if len(job.Files) > 0 {
+		if showVerbose && len(job.Files) > 0 {
 			fmt.Fprintf(rt.Stdout, "│  files: %s\n", strings.Join(job.Files, ", "))
 		}
-		if job.CacheEnabled {
+		if showVerbose && job.CacheEnabled {
 			fmt.Fprintf(rt.Stdout, "│  cache: enabled\n")
 		}
 		if job.Reason != "" {
 			fmt.Fprintf(rt.Stdout, "│  note: %s\n", job.Reason)
 		}
+		if showTiming {
+			fmt.Fprintf(rt.Stdout, "│  timing: %s\n", job.Duration.Round(time.Millisecond))
+		}
+	}
+	if hiddenSuccesses > 0 {
+		fmt.Fprintf(rt.Stdout, "│ hidden successful jobs: %d\n", hiddenSuccesses)
+	}
+	if showTiming {
+		fmt.Fprintf(rt.Stdout, "│ total: %s\n", result.Duration.Round(time.Millisecond))
 	}
 }
