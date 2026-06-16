@@ -26,6 +26,8 @@ type Runtime struct {
 	Stderr io.Writer
 }
 
+var SupportedHooks = []string{"pre-commit", "commit-msg", "pre-push"}
+
 type InitOptions struct {
 	Yes               bool
 	Install           bool
@@ -54,6 +56,38 @@ type InitOptions struct {
 	NoColor           bool
 	NoEmoji           bool
 	JSON              bool
+}
+
+type InstallOptions struct {
+	Force      bool
+	Hook       string
+	Path       string
+	ConfigPath string
+}
+
+type ResolvedInstallOptions struct {
+	Force       bool
+	Hook        string
+	Path        string
+	ConfigPath  string
+	Interactive bool
+}
+
+type UninstallOptions struct {
+	Hook         string
+	All          bool
+	RemoveConfig bool
+	Path         string
+	ConfigPath   string
+}
+
+type ResolvedUninstallOptions struct {
+	Hook         string
+	All          bool
+	RemoveConfig bool
+	Path         string
+	ConfigPath   string
+	Interactive  bool
 }
 
 type ResolvedInitOptions struct {
@@ -170,22 +204,9 @@ func ResolveInitOptions(opts InitOptions, rt Runtime) (ResolvedInitOptions, erro
 
 	var hooks []string
 	if strings.TrimSpace(opts.Hooks) != "" {
-		parts := strings.Split(opts.Hooks, ",")
-		seen := map[string]bool{}
-		for _, part := range parts {
-			hook := strings.TrimSpace(part)
-			if hook == "" {
-				continue
-			}
-			switch hook {
-			case "pre-commit", "commit-msg", "pre-push":
-			default:
-				return ResolvedInitOptions{}, fmt.Errorf("unsupported hook %q", hook)
-			}
-			if !seen[hook] {
-				seen[hook] = true
-				hooks = append(hooks, hook)
-			}
+		hooks, err = ParseHookList(opts.Hooks)
+		if err != nil {
+			return ResolvedInitOptions{}, err
 		}
 	}
 
@@ -227,6 +248,96 @@ func ResolveInitOptions(opts InitOptions, rt Runtime) (ResolvedInitOptions, erro
 		Monorepo:      monorepo,
 		Interactive:   interactive,
 	}, nil
+}
+
+func ResolveInstallOptions(opts InstallOptions, rt Runtime) (ResolvedInstallOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedInstallOptions{}, err
+	}
+
+	hook := strings.TrimSpace(opts.Hook)
+	if err := ValidateHookName(hook); err != nil {
+		return ResolvedInstallOptions{}, err
+	}
+
+	interactive := rt.Stdin != nil && term.IsTerminal(int(rt.Stdin.Fd())) && rt.Stdout != nil
+	return ResolvedInstallOptions{
+		Force:       opts.Force,
+		Hook:        hook,
+		Path:        path,
+		ConfigPath:  strings.TrimSpace(opts.ConfigPath),
+		Interactive: interactive,
+	}, nil
+}
+
+func ResolveUninstallOptions(opts UninstallOptions, rt Runtime) (ResolvedUninstallOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedUninstallOptions{}, err
+	}
+
+	hook := strings.TrimSpace(opts.Hook)
+	if err := ValidateHookName(hook); err != nil {
+		return ResolvedUninstallOptions{}, err
+	}
+
+	if opts.All && hook != "" {
+		return ResolvedUninstallOptions{}, errors.New("--all and --hook cannot be used together")
+	}
+
+	interactive := rt.Stdin != nil && term.IsTerminal(int(rt.Stdin.Fd())) && rt.Stdout != nil
+	return ResolvedUninstallOptions{
+		Hook:         hook,
+		All:          opts.All,
+		RemoveConfig: opts.RemoveConfig,
+		Path:         path,
+		ConfigPath:   strings.TrimSpace(opts.ConfigPath),
+		Interactive:  interactive,
+	}, nil
+}
+
+func ParseHookList(value string) ([]string, error) {
+	parts := strings.Split(value, ",")
+	seen := map[string]bool{}
+	hooks := make([]string, 0, len(parts))
+	for _, part := range parts {
+		hook := strings.TrimSpace(part)
+		if hook == "" {
+			continue
+		}
+		if err := ValidateHookName(hook); err != nil {
+			return nil, err
+		}
+		if !seen[hook] {
+			seen[hook] = true
+			hooks = append(hooks, hook)
+		}
+	}
+	return hooks, nil
+}
+
+func ValidateHookName(hook string) error {
+	if hook == "" {
+		return nil
+	}
+	for _, supported := range SupportedHooks {
+		if hook == supported {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported hook %q", hook)
+}
+
+func resolveAbsolutePath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		path = "."
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	return absPath, nil
 }
 
 func configFormatForPath(path string) string {
