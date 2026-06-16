@@ -1,0 +1,32 @@
+version: "1"
+output:
+    mode: compact
+    timing: true
+    show_success: false
+cache:
+    enabled: true
+    dir: .righthook/cache
+    ttl: 7d
+safety:
+    isolation: smart
+    partial_staging: preserve
+    unstaged_strategy: stash
+    on_conflict: explain
+hooks:
+    pre-commit:
+        jobs:
+            gofmt:
+                run: gofmt -w {staged}
+                files: staged
+                glob:
+                    - '*.go'
+                stage_fixed: true
+            secrets:
+                run: righthook secrets scan {staged}
+                files: staged
+    pre-push:
+        jobs:
+            test:
+                run: go test ./...
+            typecheck:
+                run: go vet ./...

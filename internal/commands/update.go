@@ -16,7 +16,7 @@ func Update() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 
 	defer cancel()
-	
+
 	latest, found, err := selfupdate.DetectLatest(ctx, selfupdate.ParseSlug(SLUG))
 
 	if err != nil {
@@ -25,7 +25,7 @@ func Update() error {
 
 	if !found || latest.LessOrEqual(version.Version) {
 		fmt.Printf("You’re already on the latest version (%s)\n", version.Version)
-		
+
 		return nil
 	}
 
