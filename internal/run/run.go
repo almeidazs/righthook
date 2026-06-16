@@ -72,6 +72,12 @@ type fileInventory struct {
 	hasUntracked bool
 }
 
+type cacheMetadata struct {
+	Key  string
+	Path string
+	TTL  time.Duration
+}
+
 var execCommand = func(name string, args ...string) *exec.Cmd {
 	return exec.Command(name, args...)
 }
@@ -309,21 +315,23 @@ func (f *fileInventory) Affected(base string) ([]string, error) {
 	return append([]string(nil), selected...), nil
 }
 
-func (e Executor) filesForJob(job config.Job, opts Options, files *fileInventory) ([]string, error) {
-	source := ""
+func resolveFileSource(job config.Job, opts Options) string {
 	switch {
 	case opts.Staged:
-		source = "staged"
+		return "staged"
 	case opts.Changed:
-		source = "changed"
+		return "changed"
 	case job.Scope == "affected" || job.Workspace == "affected":
-		source = "affected"
+		return "affected"
 	case strings.TrimSpace(job.Files) != "":
-		source = strings.TrimSpace(job.Files)
+		return strings.TrimSpace(job.Files)
 	default:
-		source = "all"
+		return "all"
 	}
+}
 
+func (e Executor) filesForJob(job config.Job, opts Options, files *fileInventory) ([]string, error) {
+	source := resolveFileSource(job, opts)
 	var selected []string
 	var err error
 	switch source {
@@ -431,6 +439,15 @@ func cacheEnabled(cfg config.File, job config.Job, opts Options) bool {
 	return cfg.Cache.Enabled && job.Cache && !opts.NoCache
 }
 
+func (e Executor) cacheMetadata(cfg config.File, hook, jobName, command string, files []string) (cacheMetadata, error) {
+	path, ttl, err := e.cachePath(cfg, hook, jobName, command, files)
+	if err != nil {
+		return cacheMetadata{}, err
+	}
+	key := strings.TrimSuffix(filepath.Base(path), ".cache")
+	return cacheMetadata{Key: key, Path: path, TTL: ttl}, nil
+}
+
 func (e Executor) cacheHit(cfg config.File, hook, jobName, command string, files []string) (bool, error) {
 	path, ttl, err := e.cachePath(cfg, hook, jobName, command, files)
 	if err != nil {
@@ -495,11 +512,15 @@ func (e Executor) executeCommand(command, workDir string, opts Options) error {
 	cmd.Dir = workDir
 	cmd.Stdout = e.stdout()
 	cmd.Stderr = e.stderr()
-	cmd.Env = append(os.Environ(),
+	cmd.Env = e.commandEnv(opts)
+	return cmd.Run()
+}
+
+func (e Executor) commandEnv(opts Options) []string {
+	return append(os.Environ(),
 		"RIGHTHOOK_HOOK="+opts.Hook,
 		fmt.Sprintf("RIGHTHOOK_FIX=%t", opts.Fix),
 	)
-	return cmd.Run()
 }
 
 func (e Executor) gitLines(args ...string) ([]string, error) {

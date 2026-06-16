@@ -101,6 +101,36 @@ type ResolvedRunOptions struct {
 	Staged     bool
 }
 
+type TraceOptions struct {
+	Hook       string
+	Args       []string
+	Path       string
+	ConfigPath string
+	NoCache    bool
+	Fix        bool
+	DryRun     bool
+	Except     []string
+	Only       []string
+	Changed    bool
+	Staged     bool
+	OutputPath string
+}
+
+type ResolvedTraceOptions struct {
+	Hook       string
+	Args       []string
+	Path       string
+	ConfigPath string
+	NoCache    bool
+	Fix        bool
+	DryRun     bool
+	Except     []string
+	Only       []string
+	Changed    bool
+	Staged     bool
+	OutputPath string
+}
+
 type MigrateOptions struct {
 	Target           string
 	Path             string
@@ -344,6 +374,44 @@ func ResolveRunOptions(opts RunOptions) (ResolvedRunOptions, error) {
 		Only:       only,
 		Changed:    opts.Changed,
 		Staged:     opts.Staged,
+	}, nil
+}
+
+func ResolveTraceOptions(opts TraceOptions) (ResolvedTraceOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedTraceOptions{}, err
+	}
+
+	hook := strings.TrimSpace(opts.Hook)
+	if err := ValidateHookName(hook); err != nil {
+		return ResolvedTraceOptions{}, err
+	}
+
+	outputPath := strings.TrimSpace(opts.OutputPath)
+	if outputPath != "" && strings.ToLower(filepath.Ext(outputPath)) != ".json" {
+		return ResolvedTraceOptions{}, fmt.Errorf("--output must be a .json file, got %q", outputPath)
+	}
+	if outputPath != "" && !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(path, outputPath)
+	}
+
+	only := uniqueNonEmpty(opts.Only)
+	except := uniqueNonEmpty(opts.Except)
+
+	return ResolvedTraceOptions{
+		Hook:       hook,
+		Args:       append([]string(nil), opts.Args...),
+		Path:       path,
+		ConfigPath: strings.TrimSpace(opts.ConfigPath),
+		NoCache:    opts.NoCache,
+		Fix:        opts.Fix,
+		DryRun:     opts.DryRun,
+		Except:     except,
+		Only:       only,
+		Changed:    opts.Changed,
+		Staged:     opts.Staged,
+		OutputPath: outputPath,
 	}, nil
 }
 

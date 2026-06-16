@@ -14,6 +14,10 @@ type executionEnv struct {
 	workDir        string
 	cleanupFuncs   []func() error
 	stageFixedFunc func([]string) error
+	usedWorktree   bool
+	stashRef       string
+	hasHEAD        bool
+	repoState      repoState
 }
 
 func (e executionEnv) cleanup() error {
@@ -62,6 +66,8 @@ func (e Executor) prepareEnvironment(cfg config.File, opts Options, files *fileI
 		return env, err
 	}
 	hasHead := e.hasHEAD()
+	env.hasHEAD = hasHead
+	env.repoState = state
 	if err := e.enforceSafety(cfg.Safety, state, jobs); err != nil {
 		return env, err
 	}
@@ -85,6 +91,7 @@ func (e Executor) prepareEnvironment(cfg config.File, opts Options, files *fileI
 				return env, err
 			}
 			if ref != "" {
+				env.stashRef = ref
 				env.cleanupFuncs = append(env.cleanupFuncs, func() error {
 					return e.restoreSafetyStash(ref, cfg.Safety.OnConflict)
 				})
@@ -256,6 +263,7 @@ func (e Executor) prepareStrictEnvironment(base executionEnv) (executionEnv, err
 	}
 
 	base.workDir = tempDir
+	base.usedWorktree = true
 	base.stageFixedFunc = func(files []string) error {
 		for _, file := range files {
 			src := filepath.Join(tempDir, file)
