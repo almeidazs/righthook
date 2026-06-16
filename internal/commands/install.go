@@ -68,14 +68,9 @@ func installHooksForTarget(configPath, explicitHook string) ([]string, string, [
 				"falling back to supported v1 hooks",
 			}, nil
 		}
-		hooks := make([]string, 0, len(cfg.Hooks))
-		for hook := range cfg.Hooks {
-			hooks = append(hooks, hook)
-		}
+		hooks := config.HookNamesWithEnabledJobs(cfg.Hooks)
 		sort.Strings(hooks)
-		if len(hooks) > 0 {
-			return hooks, configPath, nil, nil
-		}
+		return hooks, configPath, nil, nil
 	}
 
 	hooks := append([]string(nil), cli.SupportedHooks...)

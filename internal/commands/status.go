@@ -57,7 +57,8 @@ func Status(raw cli.StatusOptions, rt cli.Runtime) error {
 		renderer.Error("Git hooks missing or incomplete")
 	}
 
-	for _, hook := range cli.SupportedHooks {
+	reportHooks := statusReportedHooks(cfg, cfgState, expectedHooks)
+	for _, hook := range reportHooks {
 		file, ok := installedByName[hook]
 		switch {
 		case ok && file.IsRighthook:
@@ -94,14 +95,30 @@ func loadStatusConfig(configPath string) (config.File, string, error) {
 	return cfg, "found", nil
 }
 
-func statusExpectedHooks(cfg config.File, state string) []string {
-	if state == "found" && len(cfg.Hooks) > 0 {
+func statusReportedHooks(cfg config.File, state string, expected []string) []string {
+	if state == "found" {
 		hooks := make([]string, 0, len(cfg.Hooks))
 		for hook := range cfg.Hooks {
 			hooks = append(hooks, hook)
 		}
 		sort.Strings(hooks)
-		return hooks
+		if len(hooks) > 0 {
+			return hooks
+		}
+		if len(expected) == 0 {
+			return nil
+		}
+	}
+	return append([]string(nil), cli.SupportedHooks...)
+}
+
+func statusExpectedHooks(cfg config.File, state string) []string {
+	if state == "found" && len(cfg.Hooks) > 0 {
+		hooks := config.HookNamesWithEnabledJobs(cfg.Hooks)
+		sort.Strings(hooks)
+		if len(hooks) > 0 {
+			return hooks
+		}
 	}
 	return append([]string(nil), cli.SupportedHooks...)
 }

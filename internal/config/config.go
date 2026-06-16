@@ -46,6 +46,7 @@ type Hook struct {
 
 type Job struct {
 	Run        string   `json:"run" yaml:"run" toml:"run"`
+	Enabled    *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty" toml:"enabled,omitempty"`
 	Files      string   `json:"files,omitempty" yaml:"files,omitempty" toml:"files,omitempty"`
 	Glob       []string `json:"glob,omitempty" yaml:"glob,omitempty" toml:"glob,omitempty"`
 	StageFixed bool     `json:"stage_fixed,omitempty" yaml:"stage_fixed,omitempty" toml:"stage_fixed,omitempty"`
@@ -146,6 +147,43 @@ func FormatForPath(path string) string {
 	}
 }
 
+func (j Job) IsEnabled() bool {
+	return j.Enabled == nil || *j.Enabled
+}
+
+func Enabled(v bool) *bool {
+	return &v
+}
+
+func ActiveJobs(jobs map[string]Job) map[string]Job {
+	active := make(map[string]Job, len(jobs))
+	for name, job := range jobs {
+		if job.IsEnabled() {
+			active[name] = job
+		}
+	}
+	return active
+}
+
+func HasEnabledJobs(hook Hook) bool {
+	for _, job := range hook.Jobs {
+		if job.IsEnabled() {
+			return true
+		}
+	}
+	return false
+}
+
+func HookNamesWithEnabledJobs(hooks map[string]Hook) []string {
+	names := make([]string, 0, len(hooks))
+	for name, hook := range hooks {
+		if HasEnabledJobs(hook) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 func Validate(cfg File) error {
 	if cfg.Version != "1" {
 		return fmt.Errorf("unsupported version %q", cfg.Version)
@@ -158,7 +196,7 @@ func Validate(cfg File) error {
 			if jobName == "" {
 				return fmt.Errorf("job name cannot be empty")
 			}
-			if strings.TrimSpace(job.Run) == "" {
+			if job.IsEnabled() && strings.TrimSpace(job.Run) == "" {
 				return fmt.Errorf("job %s in %s has empty run command", jobName, hookName)
 			}
 		}

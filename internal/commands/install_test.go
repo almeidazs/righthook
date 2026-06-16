@@ -59,6 +59,26 @@ func TestInstallUsesConfigHooksByDefault(t *testing.T) {
 	}
 }
 
+func TestInstallIgnoresHooksWithOnlyDisabledJobs(t *testing.T) {
+	root := initRepo(t)
+	mustWriteFile(t, filepath.Join(root, "righthook.yml"), "version: \"1\"\nhooks:\n  pre-commit:\n    jobs:\n      typecheck:\n        enabled: false\n  pre-push:\n    jobs:\n      test:\n        run: go test ./...\n")
+
+	var out bytes.Buffer
+	err := Install(cli.InstallOptions{
+		Path: root,
+	}, cli.Runtime{Stdin: os.Stdin, Stdout: &out, Stderr: &out})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-push")); err != nil {
+		t.Fatalf("expected pre-push hook: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect pre-commit hook to be installed")
+	}
+}
+
 func TestInstallProtectsOverwriteWithoutForce(t *testing.T) {
 	root := initRepo(t)
 	mustWriteFile(t, filepath.Join(root, ".git", "hooks", "pre-commit"), "#!/bin/sh\n")

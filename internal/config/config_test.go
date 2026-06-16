@@ -24,3 +24,16 @@ func TestEncodeDecodeAcrossFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateAllowsDisabledJobWithoutRun(t *testing.T) {
+	cfg := New(true, "smart")
+	cfg.Hooks["pre-commit"] = Hook{
+		Jobs: map[string]Job{
+			"typecheck": {Enabled: Enabled(false)},
+		},
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
