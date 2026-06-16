@@ -73,6 +73,34 @@ type ResolvedInstallOptions struct {
 	Interactive bool
 }
 
+type RunOptions struct {
+	Hook       string
+	Args       []string
+	Path       string
+	ConfigPath string
+	NoCache    bool
+	Fix        bool
+	DryRun     bool
+	Except     []string
+	Only       []string
+	Changed    bool
+	Staged     bool
+}
+
+type ResolvedRunOptions struct {
+	Hook       string
+	Args       []string
+	Path       string
+	ConfigPath string
+	NoCache    bool
+	Fix        bool
+	DryRun     bool
+	Except     []string
+	Only       []string
+	Changed    bool
+	Staged     bool
+}
+
 type MigrateOptions struct {
 	Target           string
 	Path             string
@@ -290,6 +318,35 @@ func ResolveInstallOptions(opts InstallOptions, rt Runtime) (ResolvedInstallOpti
 	}, nil
 }
 
+func ResolveRunOptions(opts RunOptions) (ResolvedRunOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedRunOptions{}, err
+	}
+
+	hook := strings.TrimSpace(opts.Hook)
+	if err := ValidateHookName(hook); err != nil {
+		return ResolvedRunOptions{}, err
+	}
+
+	only := uniqueNonEmpty(opts.Only)
+	except := uniqueNonEmpty(opts.Except)
+
+	return ResolvedRunOptions{
+		Hook:       hook,
+		Args:       append([]string(nil), opts.Args...),
+		Path:       path,
+		ConfigPath: strings.TrimSpace(opts.ConfigPath),
+		NoCache:    opts.NoCache,
+		Fix:        opts.Fix,
+		DryRun:     opts.DryRun,
+		Except:     except,
+		Only:       only,
+		Changed:    opts.Changed,
+		Staged:     opts.Staged,
+	}, nil
+}
+
 func ResolveMigrateOptions(opts MigrateOptions, rt Runtime) (ResolvedMigrateOptions, error) {
 	path, err := resolveAbsolutePath(opts.Path)
 	if err != nil {
@@ -395,4 +452,18 @@ func configFormatForPath(path string) string {
 	default:
 		return ""
 	}
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
