@@ -61,6 +61,11 @@ type TraceJobResult struct {
 	Name            string           `json:"name"`
 	Run             string           `json:"run"`
 	ExpandedCommand string           `json:"expanded_command"`
+	Branch          string           `json:"branch,omitempty"`
+	BaseBranch      string           `json:"base_branch,omitempty"`
+	Workspace       string           `json:"workspace,omitempty"`
+	WorkspaceRoot   string           `json:"workspace_root,omitempty"`
+	RepoRoot        string           `json:"repo_root,omitempty"`
 	Status          string           `json:"status"`
 	Reason          string           `json:"reason,omitempty"`
 	Duration        string           `json:"duration"`
@@ -70,7 +75,6 @@ type TraceJobResult struct {
 	FileSelector    string           `json:"file_selector"`
 	Glob            []string         `json:"glob,omitempty"`
 	Scope           string           `json:"scope,omitempty"`
-	Workspace       string           `json:"workspace,omitempty"`
 	Base            string           `json:"base,omitempty"`
 	StageFixed      bool             `json:"stage_fixed"`
 	Cache           TraceCacheResult `json:"cache"`
@@ -151,7 +155,12 @@ func (e Executor) Trace(cfg config.File, opts Options) (TraceResult, error) {
 			return trace, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
-		expansion, err := expandCommand(selected.Job.Run, runFiles, files, opts.Args)
+		jobCtx, err := e.buildExecutionContext(selected.Job, opts)
+		if err != nil {
+			return trace, fmt.Errorf("%s: %w", selected.Name, err)
+		}
+
+		expansion, err := expandCommand(selected.Job.Run, runFiles, files, opts.Args, jobCtx)
 		if err != nil {
 			return trace, fmt.Errorf("%s: %w", selected.Name, err)
 		}
@@ -160,13 +169,17 @@ func (e Executor) Trace(cfg config.File, opts Options) (TraceResult, error) {
 			Name:            selected.Name,
 			Run:             selected.Job.Run,
 			ExpandedCommand: expansion.Command,
+			Branch:          jobCtx.Branch,
+			BaseBranch:      jobCtx.BaseBranch,
+			Workspace:       jobCtx.Workspace,
+			WorkspaceRoot:   jobCtx.WorkspaceRoot,
+			RepoRoot:        jobCtx.RepoRoot,
 			CWD:             env.workDir,
 			Env:             append([]string(nil), e.commandEnv(opts)...),
 			Files:           append([]string(nil), runFiles...),
 			FileSelector:    resolveFileSource(selected.Job, opts),
 			Glob:            append([]string(nil), selected.Job.Glob...),
 			Scope:           strings.TrimSpace(selected.Job.Scope),
-			Workspace:       strings.TrimSpace(selected.Job.Workspace),
 			Base:            strings.TrimSpace(selected.Job.Base),
 			StageFixed:      selected.Job.StageFixed,
 			Cache: TraceCacheResult{

@@ -53,6 +53,15 @@ type commandExpansion struct {
 	HasEmptyFilePlaceholder bool
 }
 
+type executionContext struct {
+	RepoRoot      string
+	WorkspaceRoot string
+	Workspace     string
+	Branch        string
+	BaseBranch    string
+	BaseRef       string
+}
+
 type Executor struct {
 	Repo   git.Repository
 	Stdout io.Writer
@@ -100,6 +109,10 @@ func (e Executor) Run(cfg config.File, opts Options) (Result, error) {
 	}
 	startedAt := time.Now()
 	files := newFileInventory(e)
+	ctx, err := e.buildExecutionContext(config.Job{}, opts)
+	if err != nil {
+		return res, err
+	}
 
 	env, err := e.prepareEnvironment(cfg, opts, files, jobs)
 	if err != nil {
@@ -119,7 +132,15 @@ func (e Executor) Run(cfg config.File, opts Options) (Result, error) {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
-		expansion, err := expandCommand(selected.Job.Run, runFiles, files, opts.Args)
+		jobCtx, err := e.buildExecutionContext(selected.Job, opts)
+		if err != nil {
+			return res, fmt.Errorf("%s: %w", selected.Name, err)
+		}
+		if jobCtx.RepoRoot == "" {
+			jobCtx = ctx
+		}
+
+		expansion, err := expandCommand(selected.Job.Run, runFiles, files, opts.Args, jobCtx)
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
@@ -381,7 +402,7 @@ func globMatches(pattern, path string) bool {
 	return false
 }
 
-func expandCommand(command string, resolvedFiles []string, files *fileInventory, hookArgs []string) (commandExpansion, error) {
+func expandCommand(command string, resolvedFiles []string, files *fileInventory, hookArgs []string, ctx executionContext) (commandExpansion, error) {
 	replaced := command
 	hasEmptyFilePlaceholder := false
 	replaced = strings.ReplaceAll(replaced, "{files}", shellJoin(resolvedFiles))
@@ -408,12 +429,37 @@ func expandCommand(command string, resolvedFiles []string, files *fileInventory,
 			hasEmptyFilePlaceholder = true
 		}
 	}
+	if strings.Contains(replaced, "{affected}") {
+		affectedFiles, err := files.Affected(ctx.BaseRef)
+		if err != nil {
+			return commandExpansion{}, err
+		}
+		replaced = strings.ReplaceAll(replaced, "{affected}", shellJoin(affectedFiles))
+		if len(affectedFiles) == 0 {
+			hasEmptyFilePlaceholder = true
+		}
+	}
+	if strings.Contains(replaced, "{all}") {
+		allFiles, err := files.All()
+		if err != nil {
+			return commandExpansion{}, err
+		}
+		replaced = strings.ReplaceAll(replaced, "{all}", shellJoin(allFiles))
+		if len(allFiles) == 0 {
+			hasEmptyFilePlaceholder = true
+		}
+	}
 	if strings.Contains(replaced, "{commit_msg_file}") {
 		if len(hookArgs) == 0 || strings.TrimSpace(hookArgs[0]) == "" {
 			return commandExpansion{}, errors.New("hook requires {commit_msg_file} but no commit message file argument was provided")
 		}
 		replaced = strings.ReplaceAll(replaced, "{commit_msg_file}", shellEscape(hookArgs[0]))
 	}
+	replaced = strings.ReplaceAll(replaced, "{branch}", shellEscape(ctx.Branch))
+	replaced = strings.ReplaceAll(replaced, "{base_branch}", shellEscape(ctx.BaseBranch))
+	replaced = strings.ReplaceAll(replaced, "{workspace}", shellEscape(ctx.Workspace))
+	replaced = strings.ReplaceAll(replaced, "{workspace_root}", shellEscape(ctx.WorkspaceRoot))
+	replaced = strings.ReplaceAll(replaced, "{repo_root}", shellEscape(ctx.RepoRoot))
 	return commandExpansion{Command: replaced, HasEmptyFilePlaceholder: hasEmptyFilePlaceholder}, nil
 }
 
@@ -521,6 +567,48 @@ func (e Executor) commandEnv(opts Options) []string {
 		"RIGHTHOOK_HOOK="+opts.Hook,
 		fmt.Sprintf("RIGHTHOOK_FIX=%t", opts.Fix),
 	)
+}
+
+func (e Executor) buildExecutionContext(job config.Job, opts Options) (executionContext, error) {
+	baseRef := strings.TrimSpace(job.Base)
+	if baseRef == "" {
+		baseRef = "origin/main"
+	}
+	branch, err := e.currentBranch()
+	if err != nil {
+		return executionContext{}, err
+	}
+	workspaceRoot := e.Repo.Root
+	workspaceName := filepath.Base(workspaceRoot)
+	return executionContext{
+		RepoRoot:      e.Repo.Root,
+		WorkspaceRoot: workspaceRoot,
+		Workspace:     workspaceName,
+		Branch:        branch,
+		BaseBranch:    shortRefName(baseRef),
+		BaseRef:       baseRef,
+	}, nil
+}
+
+func (e Executor) currentBranch() (string, error) {
+	out, err := e.gitOutput("branch", "--show-current")
+	if err != nil {
+		return "", fmt.Errorf("resolve current branch: %w", err)
+	}
+	branch := strings.TrimSpace(out)
+	if branch == "" {
+		return "HEAD", nil
+	}
+	return branch, nil
+}
+
+func shortRefName(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	parts := strings.Split(ref, "/")
+	return parts[len(parts)-1]
 }
 
 func (e Executor) gitLines(args ...string) ([]string, error) {
