@@ -146,7 +146,7 @@ func TestShouldWriteMigratedConfigUsesPromptWhenInteractive(t *testing.T) {
 	})
 
 	called := false
-	confirmMigrateWrite = func(rt cli.Runtime, path string) (bool, error) {
+	confirmMigrateWrite = func(_ cli.Runtime, _ string) (bool, error) {
 		called = true
 		return true, nil
 	}

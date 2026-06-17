@@ -61,14 +61,14 @@ func (e Executor) prepareEnvironment(cfg config.File, opts Options, files *fileI
 		return env, nil
 	}
 
-	state, err := e.repoState(files)
+	state, err := collectRepoState(files)
 	if err != nil {
 		return env, err
 	}
 	hasHead := e.hasHEAD()
 	env.hasHEAD = hasHead
 	env.repoState = state
-	if err := e.enforceSafety(cfg.Safety, state, jobs); err != nil {
+	if err := enforceSafety(cfg.Safety, state, jobs); err != nil {
 		return env, err
 	}
 
@@ -108,7 +108,7 @@ func (e Executor) hasHEAD() bool {
 	return cmd.Run() == nil
 }
 
-func (e Executor) repoState(files *fileInventory) (repoState, error) {
+func collectRepoState(files *fileInventory) (repoState, error) {
 	changed, err := files.Changed()
 	if err != nil {
 		return repoState{}, err
@@ -144,7 +144,7 @@ func (e Executor) repoState(files *fileInventory) (repoState, error) {
 	return state, nil
 }
 
-func (e Executor) enforceSafety(safety config.SafetyConfig, state repoState, jobs []selectedJob) error {
+func enforceSafety(safety config.SafetyConfig, state repoState, jobs []selectedJob) error {
 	if safety.Isolation == "off" {
 		return nil
 	}

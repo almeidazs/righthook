@@ -14,7 +14,7 @@ var traceCmd = &cobra.Command{
 	Use:   "trace <hook> [hook args...]",
 	Short: "Run a hook and write a detailed execution trace to JSON",
 	Args:  cobra.MinimumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		traceOptions.Hook = args[0]
 		traceOptions.Args = append([]string(nil), args[1:]...)
 		return commands.Trace(traceOptions, cli.Runtime{

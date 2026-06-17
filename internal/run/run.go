@@ -109,7 +109,7 @@ func (e Executor) Run(cfg config.File, opts Options) (Result, error) {
 	}
 	startedAt := time.Now()
 	files := newFileInventory(e)
-	ctx, err := e.buildExecutionContext(config.Job{}, opts)
+	ctx, err := e.buildExecutionContext(config.Job{})
 	if err != nil {
 		return res, err
 	}
@@ -127,12 +127,12 @@ func (e Executor) Run(cfg config.File, opts Options) (Result, error) {
 	for _, selected := range jobs {
 		jobStartedAt := time.Now()
 
-		runFiles, err := e.filesForJob(selected.Job, opts, files)
+		runFiles, err := filesForJob(selected.Job, opts, files)
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
-		jobCtx, err := e.buildExecutionContext(selected.Job, opts)
+		jobCtx, err := e.buildExecutionContext(selected.Job)
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", selected.Name, err)
 		}
@@ -351,7 +351,7 @@ func resolveFileSource(job config.Job, opts Options) string {
 	}
 }
 
-func (e Executor) filesForJob(job config.Job, opts Options, files *fileInventory) ([]string, error) {
+func filesForJob(job config.Job, opts Options, files *fileInventory) ([]string, error) {
 	source := resolveFileSource(job, opts)
 	var selected []string
 	var err error
@@ -569,7 +569,7 @@ func (e Executor) commandEnv(opts Options) []string {
 	)
 }
 
-func (e Executor) buildExecutionContext(job config.Job, opts Options) (executionContext, error) {
+func (e Executor) buildExecutionContext(job config.Job) (executionContext, error) {
 	baseRef := strings.TrimSpace(job.Base)
 	if baseRef == "" {
 		baseRef = "origin/main"

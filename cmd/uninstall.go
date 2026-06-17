@@ -14,7 +14,7 @@ var uninstallCmd = &cobra.Command{
 	Use:     "uninstall",
 	Aliases: []string{"remove"},
 	Short:   "Remove Righthook Git hook scripts",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return commands.Uninstall(uninstallOptions, cli.Runtime{
 			Stdin:  os.Stdin,
 			Stdout: os.Stdout,

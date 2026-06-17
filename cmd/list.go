@@ -13,7 +13,7 @@ var listOptions cli.ListOptions
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List configured hooks and jobs",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return commands.List(listOptions, cli.Runtime{
 			Stdin:  os.Stdin,
 			Stdout: os.Stdout,

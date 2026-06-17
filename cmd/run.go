@@ -14,7 +14,7 @@ var runCmd = &cobra.Command{
 	Use:   "run <hook> [hook args...]",
 	Short: "Run configured jobs for a Git hook",
 	Args:  cobra.MinimumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		runOptions.Hook = args[0]
 		runOptions.Args = append([]string(nil), args[1:]...)
 		return commands.Run(runOptions, cli.Runtime{

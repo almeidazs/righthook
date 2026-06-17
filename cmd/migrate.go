@@ -14,7 +14,7 @@ var migrateCmd = &cobra.Command{
 	Use:   "migrate <lefthook|husky>",
 	Short: "Migrate hook configuration from Lefthook or Husky",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		migrateOptions.Target = args[0]
 
 		return commands.Migrate(migrateOptions, cli.Runtime{

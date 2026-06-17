@@ -150,12 +150,12 @@ func (e Executor) Trace(cfg config.File, opts Options) (TraceResult, error) {
 
 	for _, selected := range jobs {
 		jobStartedAt := time.Now()
-		runFiles, err := e.filesForJob(selected.Job, opts, files)
+		runFiles, err := filesForJob(selected.Job, opts, files)
 		if err != nil {
 			return trace, fmt.Errorf("%s: %w", selected.Name, err)
 		}
 
-		jobCtx, err := e.buildExecutionContext(selected.Job, opts)
+		jobCtx, err := e.buildExecutionContext(selected.Job)
 		if err != nil {
 			return trace, fmt.Errorf("%s: %w", selected.Name, err)
 		}

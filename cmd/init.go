@@ -13,7 +13,7 @@ var initOptions cli.InitOptions
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize Righthook in the current repository",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		initOptions.InstallSpecified = cmd.Flags().Changed("install") || cmd.Flags().Changed("no-install")
 		initOptions.CacheSpecified = cmd.Flags().Changed("cache") || cmd.Flags().Changed("no-cache")
 		initOptions.SafetySpecified = cmd.Flags().Changed("safety")

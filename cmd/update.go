@@ -9,7 +9,7 @@ var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"upgrade"},
 	Short:   "Update the CLI to new version if it is available",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return commands.Update()
 	},
 }

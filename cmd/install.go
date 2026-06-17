@@ -13,7 +13,7 @@ var installOptions cli.InstallOptions
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install Righthook Git hook scripts",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return commands.Install(installOptions, cli.Runtime{
 			Stdin:  os.Stdin,
 			Stdout: os.Stdout,

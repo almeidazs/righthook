@@ -271,7 +271,7 @@ func detectPresetCandidates(res Result) []string {
 	return presets
 }
 
-func detectLanguages(root string, pkg PackageJSON) []string {
+func detectLanguages(root string, _ PackageJSON) []string {
 	langs := []string{}
 	if fileExists(filepath.Join(root, "package.json")) {
 		addUnique(&langs, "javascript")

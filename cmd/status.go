@@ -13,7 +13,7 @@ var statusOptions cli.StatusOptions
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show whether Righthook is installed correctly",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return commands.Status(statusOptions, cli.Runtime{
 			Stdin:  os.Stdin,
 			Stdout: os.Stdout,
