@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/almeidazs/righthook/internal/cli"
+	"github.com/almeidazs/righthook/internal/config"
 	"github.com/almeidazs/righthook/internal/git"
 	"github.com/almeidazs/righthook/internal/output"
 	"github.com/orochaa/go-clack/prompts"
@@ -44,9 +44,11 @@ func Uninstall(raw cli.UninstallOptions, rt cli.Runtime) error {
 
 	removedConfigs := []string{}
 	if opts.RemoveConfig {
-		configTargets := []string{filepath.Join(repo.Root, "righthook.yml")}
+		configTargets := []string{resolveRepoConfigPath(repo.Root, "")}
 		if opts.ConfigPath != "" {
 			configTargets = append(configTargets, resolveRepoConfigPath(repo.Root, opts.ConfigPath))
+		} else {
+			configTargets = append(configTargets, config.DefaultPath(repo.Root))
 		}
 		removedConfigs, err = git.RemoveFiles(configTargets)
 		if err != nil {

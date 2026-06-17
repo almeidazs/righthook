@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/almeidazs/righthook/internal/config"
 )
 
 type Result struct {
@@ -72,7 +74,9 @@ func Scan(cwd string) (Result, error) {
 		}
 	}
 
-	res.ConfigExists = fileExists(filepath.Join(cwd, "righthook.yml")) || fileExists(filepath.Join(root, "righthook.yml"))
+	_, cwdHasConfig := config.FindExistingPath(cwd)
+	_, rootHasConfig := config.FindExistingPath(root)
+	res.ConfigExists = cwdHasConfig || rootHasConfig
 
 	if fileExists(filepath.Join(root, "lefthook.yml")) {
 		res.LegacyManagers = append(res.LegacyManagers, "lefthook")

@@ -64,6 +64,9 @@ var (
 	validConflictPolicies  = map[string]bool{"explain": true, "warn": true, "fail": true, "ignore": true}
 	validFileSelectors     = map[string]bool{"all": true, "staged": true, "changed": true, "affected": true}
 	validJobScopeSelectors = map[string]bool{"affected": true}
+	configBaseNames        = []string{"righthook.local", "righthook"}
+	configExtensions       = []string{".yml", ".yaml", ".json", ".toml"}
+	configSearchDirs       = []string{"", ".config"}
 )
 
 func New(cacheEnabled bool, safetyMode string) File {
@@ -160,6 +163,36 @@ func Load(path string) (File, error) {
 		return File{}, err
 	}
 	return Decode(data, FormatForPath(path))
+}
+
+func DefaultPath(root string) string {
+	return filepath.Join(root, "righthook.yml")
+}
+
+func CandidatePaths(root string) []string {
+	paths := make([]string, 0, len(configBaseNames)*len(configExtensions)*len(configSearchDirs))
+	for _, base := range configBaseNames {
+		for _, dir := range configSearchDirs {
+			for _, ext := range configExtensions {
+				name := base + ext
+				if dir == "" {
+					paths = append(paths, filepath.Join(root, name))
+					continue
+				}
+				paths = append(paths, filepath.Join(root, dir, name))
+			}
+		}
+	}
+	return paths
+}
+
+func FindExistingPath(root string) (string, bool) {
+	for _, path := range CandidatePaths(root) {
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 func FormatForPath(path string) string {

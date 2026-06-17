@@ -69,6 +69,32 @@ func TestRunChangedExecutesCommand(t *testing.T) {
 	}
 }
 
+func TestRunPrefersLocalConfigOverDefaultConfig(t *testing.T) {
+	root := initGitRepo(t)
+	mustWriteFile(t, filepath.Join(root, "righthook.yml"), "version: \"1\"\nhooks:\n  pre-push:\n    jobs:\n      default:\n        run: printf 'default\\n' >> runs.txt\n")
+	mustWriteFile(t, filepath.Join(root, "righthook.local.json"), "{\n  \"version\": \"1\",\n  \"hooks\": {\n    \"pre-push\": {\n      \"jobs\": {\n        \"local\": {\n          \"run\": \"printf 'local\\\\n' >> runs.txt\"\n        }\n      }\n    }\n  }\n}\n")
+
+	var out bytes.Buffer
+	err := Run(cli.RunOptions{
+		Hook: "pre-push",
+		Path: root,
+	}, cli.Runtime{Stdin: os.Stdin, Stdout: &out, Stderr: &out})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "runs.txt"))
+	if err != nil {
+		t.Fatalf("read runs file: %v", err)
+	}
+	if strings.Contains(string(data), "default") || !strings.Contains(string(data), "local") {
+		t.Fatalf("expected local config to win, got %q", string(data))
+	}
+	if !strings.Contains(out.String(), filepath.Join(root, "righthook.local.json")) {
+		t.Fatalf("expected resolved local config path in output, got %q", out.String())
+	}
+}
+
 func TestRunCommitMsgRequiresArgument(t *testing.T) {
 	root := initGitRepo(t)
 	mustWriteFile(t, filepath.Join(root, "righthook.yml"), "version: \"1\"\nhooks:\n  commit-msg:\n    jobs:\n      lint:\n        run: cat {commit_msg_file}\n")

@@ -79,13 +79,16 @@ func installHooksForTarget(configPath, explicitHook string) ([]string, string, [
 }
 
 func resolveRepoConfigPath(repoRoot, configPath string) string {
-	if configPath == "" {
-		return filepath.Join(repoRoot, "righthook.yml")
+	if configPath != "" {
+		if filepath.IsAbs(configPath) {
+			return configPath
+		}
+		return filepath.Join(repoRoot, configPath)
 	}
-	if filepath.IsAbs(configPath) {
-		return configPath
+	if discovered, ok := config.FindExistingPath(repoRoot); ok {
+		return discovered
 	}
-	return filepath.Join(repoRoot, configPath)
+	return config.DefaultPath(repoRoot)
 }
 
 func joinSorted(values []string) string {

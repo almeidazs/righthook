@@ -59,6 +59,40 @@ func TestInstallUsesConfigHooksByDefault(t *testing.T) {
 	}
 }
 
+func TestResolveRepoConfigPathPrefersLocalConfig(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "righthook.yml"), "version: \"1\"\n")
+	mustWriteFile(t, filepath.Join(root, "righthook.local.toml"), "version = \"1\"\n")
+
+	got := resolveRepoConfigPath(root, "")
+	want := filepath.Join(root, "righthook.local.toml")
+	if got != want {
+		t.Fatalf("expected local config %q, got %q", want, got)
+	}
+}
+
+func TestResolveRepoConfigPathSupportsConfigDirectory(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, ".config", "righthook.json"), "{\n  \"version\": \"1\"\n}\n")
+
+	got := resolveRepoConfigPath(root, "")
+	want := filepath.Join(root, ".config", "righthook.json")
+	if got != want {
+		t.Fatalf("expected .config config %q, got %q", want, got)
+	}
+}
+
+func TestResolveRepoConfigPathKeepsExplicitConfigPriority(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "righthook.local.yml"), "version: \"1\"\n")
+
+	got := resolveRepoConfigPath(root, "custom/righthook.toml")
+	want := filepath.Join(root, "custom", "righthook.toml")
+	if got != want {
+		t.Fatalf("expected explicit config %q, got %q", want, got)
+	}
+}
+
 func TestInstallIgnoresHooksWithOnlyDisabledJobs(t *testing.T) {
 	root := initRepo(t)
 	mustWriteFile(t, filepath.Join(root, "righthook.yml"), "version: \"1\"\nhooks:\n  pre-commit:\n    jobs:\n      typecheck:\n        enabled: false\n  pre-push:\n    jobs:\n      test:\n        run: go test ./...\n")
@@ -152,6 +186,27 @@ func TestUninstallAllRemovesHooksAndConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "righthook.yml")); !os.IsNotExist(err) {
 		t.Fatalf("expected config to be removed")
+	}
+}
+
+func TestUninstallRemoveConfigRemovesDiscoveredLocalConfig(t *testing.T) {
+	root := initRepo(t)
+	localConfig := filepath.Join(root, "righthook.local.yaml")
+	mustWriteFile(t, localConfig, "version: \"1\"\n")
+	mustWriteFile(t, filepath.Join(root, ".git", "hooks", "pre-commit"), git.HookScript("pre-commit"))
+
+	var out bytes.Buffer
+	err := Uninstall(cli.UninstallOptions{
+		All:          true,
+		RemoveConfig: true,
+		Path:         root,
+	}, cli.Runtime{Stdin: os.Stdin, Stdout: &out, Stderr: &out})
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+
+	if _, err := os.Stat(localConfig); !os.IsNotExist(err) {
+		t.Fatalf("expected discovered local config to be removed")
 	}
 }
 
