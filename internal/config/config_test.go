@@ -51,3 +51,14 @@ func TestValidateRejectsUnsupportedValues(t *testing.T) {
 		t.Fatalf("expected validation error for unsupported values")
 	}
 }
+
+func TestValidateRejectsInvalidPolicyValues(t *testing.T) {
+	cfg := New(true, "smart")
+	cfg.Policy.RequiredVersion = "wat"
+	cfg.Policy.AllowSkip = "maybe"
+	cfg.Policy.RequiredHooks = []string{"post-merge"}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error for invalid policy values")
+	}
+}

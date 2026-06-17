@@ -21,6 +21,27 @@ func ResolveStatusOptions(opts StatusOptions) (ResolvedStatusOptions, error) {
 	}, nil
 }
 
+type PolicyCheckOptions struct {
+	Path       string
+	ConfigPath string
+}
+
+type ResolvedPolicyCheckOptions struct {
+	Path       string
+	ConfigPath string
+}
+
+func ResolvePolicyCheckOptions(opts PolicyCheckOptions) (ResolvedPolicyCheckOptions, error) {
+	path, err := resolveAbsolutePath(opts.Path)
+	if err != nil {
+		return ResolvedPolicyCheckOptions{}, err
+	}
+	return ResolvedPolicyCheckOptions{
+		Path:       path,
+		ConfigPath: opts.ConfigPath,
+	}, nil
+}
+
 type ListOptions struct {
 	Path       string
 	ConfigPath string

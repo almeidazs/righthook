@@ -140,6 +140,18 @@ righthook status
 
 <div align="center">
 
+### `righthook policy check`
+
+Validate the repository policy from config.
+
+</div>
+
+```bash
+righthook policy check
+```
+
+<div align="center">
+
 ### `righthook migrate`
 
 Convert an existing setup from Lefthook or Husky.
@@ -205,6 +217,14 @@ cache:
   enabled: true
   dir: .righthook/cache
   ttl: 7d
+
+policy:
+  required_version: ">=1.0.0"
+  require_installed: true
+  required_hooks:
+    - pre-commit
+    - commit-msg
+  allow_skip: warn
 
 safety:
   isolation: smart
@@ -501,6 +521,50 @@ What each option does:
 - `mode: verbose`: more execution detail
 - `timing`: prints per-job timing
 - `show_success: false`: hides successful jobs from normal output
+
+<div align="center">
+
+## Policy
+
+Policy lets teams define minimum CLI and hook requirements in the config, then validate them with `righthook policy check`.
+
+</div>
+
+```yaml
+policy:
+  required_version: ">=1.0.0"
+  require_installed: true
+  required_hooks:
+    - pre-commit
+    - commit-msg
+  allow_skip: warn
+```
+
+What each option does:
+
+- `required_version`: semver constraint that the installed Righthook binary must satisfy
+- `require_installed`: when `true`, checks whether the required hooks are installed by Righthook
+- `required_hooks`: hooks that must be present when `require_installed` is enabled
+- `allow_skip`: policy result mode, `fail` returns a non-zero exit code, `warn` reports problems but exits successfully, `ignore` also exits successfully
+
+Example:
+
+```bash
+righthook policy check
+```
+
+Example output:
+
+```text
+◇ Righthook policy
+
+✓ Version satisfies >=1.0.0
+✓ pre-commit installed
+✕ commit-msg not installed
+
+◆ Fix
+  righthook install --hook commit-msg
+```
 
 <div align="center">
 

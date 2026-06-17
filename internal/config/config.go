@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	semver "github.com/Masterminds/semver/v3"
 	koanftoml "github.com/knadh/koanf/parsers/toml/v2"
 	koanfyaml "github.com/knadh/koanf/parsers/yaml"
 	toml "github.com/pelletier/go-toml/v2"
@@ -17,6 +18,7 @@ type File struct {
 	Version string          `json:"version" yaml:"version" toml:"version"`
 	Output  OutputConfig    `json:"output" yaml:"output" toml:"output"`
 	Cache   CacheConfig     `json:"cache" yaml:"cache" toml:"cache"`
+	Policy  PolicyConfig    `json:"policy" yaml:"policy" toml:"policy"`
 	Safety  SafetyConfig    `json:"safety" yaml:"safety" toml:"safety"`
 	Hooks   map[string]Hook `json:"hooks,omitempty" yaml:"hooks,omitempty" toml:"hooks,omitempty"`
 }
@@ -31,6 +33,13 @@ type CacheConfig struct {
 	Enabled bool   `json:"enabled" yaml:"enabled" toml:"enabled"`
 	Dir     string `json:"dir" yaml:"dir" toml:"dir"`
 	TTL     string `json:"ttl" yaml:"ttl" toml:"ttl"`
+}
+
+type PolicyConfig struct {
+	RequiredVersion  string   `json:"required_version,omitempty" yaml:"required_version,omitempty" toml:"required_version,omitempty"`
+	RequireInstalled bool     `json:"require_installed,omitempty" yaml:"require_installed,omitempty" toml:"require_installed,omitempty"`
+	RequiredHooks    []string `json:"required_hooks,omitempty" yaml:"required_hooks,omitempty" toml:"required_hooks,omitempty"`
+	AllowSkip        string   `json:"allow_skip,omitempty" yaml:"allow_skip,omitempty" toml:"allow_skip,omitempty"`
 }
 
 type SafetyConfig struct {
@@ -58,6 +67,7 @@ type Job struct {
 
 var (
 	validOutputModes       = map[string]bool{"compact": true, "verbose": true}
+	validPolicyAllowSkip   = map[string]bool{"fail": true, "warn": true, "ignore": true}
 	validSafetyIsolation   = map[string]bool{"smart": true, "fast": true, "strict": true, "off": true}
 	validPartialStaging    = map[string]bool{"preserve": true, "allow": true, "forbid": true}
 	validUnstagedStrategy  = map[string]bool{"stash": true, "ignore": true, "fail": true}
@@ -252,6 +262,19 @@ func Validate(cfg File) error {
 	if mode := strings.TrimSpace(cfg.Output.Mode); mode != "" && !validOutputModes[mode] {
 		return fmt.Errorf("unsupported output.mode %q", cfg.Output.Mode)
 	}
+	if allowSkip := strings.TrimSpace(cfg.Policy.AllowSkip); allowSkip != "" && !validPolicyAllowSkip[allowSkip] {
+		return fmt.Errorf("unsupported policy.allow_skip %q", cfg.Policy.AllowSkip)
+	}
+	if constraint := strings.TrimSpace(cfg.Policy.RequiredVersion); constraint != "" {
+		if _, err := semver.NewConstraint(constraint); err != nil {
+			return fmt.Errorf("invalid policy.required_version %q: %w", cfg.Policy.RequiredVersion, err)
+		}
+	}
+	for _, hook := range cfg.Policy.RequiredHooks {
+		if err := validateHookName(strings.TrimSpace(hook)); err != nil {
+			return fmt.Errorf("unsupported policy.required_hooks entry %q", hook)
+		}
+	}
 	if isolation := strings.TrimSpace(cfg.Safety.Isolation); isolation != "" && !validSafetyIsolation[isolation] {
 		return fmt.Errorf("unsupported safety.isolation %q", cfg.Safety.Isolation)
 	}
@@ -292,4 +315,16 @@ func Validate(cfg File) error {
 		}
 	}
 	return nil
+}
+
+func validateHookName(name string) error {
+	if name == "" {
+		return fmt.Errorf("hook name cannot be empty")
+	}
+	switch name {
+	case "pre-commit", "commit-msg", "pre-push":
+		return nil
+	default:
+		return fmt.Errorf("unsupported hook %q", name)
+	}
 }
