@@ -8,7 +8,7 @@ before:
 
 builds:
     - id: righthook
-      main: ./cmd/righthook
+      main: main.go
       binary: righthook
       env:
           - CGO_ENABLED=0
