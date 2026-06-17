@@ -1,4 +1,4 @@
-<h1 align="center>Righthook</h1>
+<h1 align="center">Righthook</h1>
 
 <img align="left" width="147" height="100" title="Righthook logo" src="./assets/icon.png">
 
