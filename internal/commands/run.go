@@ -9,6 +9,7 @@ import (
 	"github.com/almeidazs/righthook/internal/config"
 	"github.com/almeidazs/righthook/internal/git"
 	runpkg "github.com/almeidazs/righthook/internal/run"
+	statspkg "github.com/almeidazs/righthook/internal/stats"
 )
 
 func Run(raw cli.RunOptions, rt cli.Runtime) error {
@@ -45,10 +46,32 @@ func Run(raw cli.RunOptions, rt cli.Runtime) error {
 		ConfigPath: configPath,
 	})
 	renderRun(rt, repo.Root, cfg.Output, result, opts.DryRun)
+	if cfg.Stats.Enabled && !opts.DryRun {
+		recordRunStats(rt, repo.Root, cfg.Stats, result)
+	}
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func recordRunStats(rt cli.Runtime, repoRoot string, cfg config.StatsConfig, result runpkg.Result) {
+	sample := statspkg.RunSample{
+		Hook:     result.Hook,
+		Duration: result.Duration,
+		Jobs:     make([]statspkg.JobSample, 0, len(result.Jobs)),
+	}
+	for _, job := range result.Jobs {
+		sample.Jobs = append(sample.Jobs, statspkg.JobSample{
+			Name:         job.Name,
+			Duration:     job.Duration,
+			Status:       job.Status,
+			CacheEnabled: job.CacheEnabled,
+		})
+	}
+	if err := statspkg.Record(repoRoot, cfg, sample, time.Now()); err != nil && rt.Stderr != nil {
+		fmt.Fprintf(rt.Stderr, "righthook stats warning: %v\n", err)
+	}
 }
 
 func renderRun(rt cli.Runtime, repoRoot string, outputCfg config.OutputConfig, result runpkg.Result, dryRun bool) {

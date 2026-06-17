@@ -140,6 +140,18 @@ righthook status
 
 <div align="center">
 
+### `righthook stats`
+
+Show aggregated hook execution stats from `.righthook/stats.json`.
+
+</div>
+
+```bash
+righthook stats
+```
+
+<div align="center">
+
 ### `righthook policy check`
 
 Validate the repository policy from config.
@@ -225,6 +237,10 @@ policy:
     - pre-commit
     - commit-msg
   allow_skip: warn
+
+stats:
+  enabled: true
+  retention: 30d
 
 safety:
   isolation: smart
@@ -564,6 +580,47 @@ Example output:
 
 ◆ Fix
   righthook install --hook commit-msg
+```
+
+<div align="center">
+
+## Stats
+
+Stats stores recent run metadata in `.righthook/stats.json` and summarizes it with `righthook stats`.
+
+</div>
+
+```yaml
+stats:
+  enabled: true
+  retention: 30d
+```
+
+What each option does:
+
+- `enabled`: turns run statistics collection on
+- `retention`: keeps only recent entries in the stats file, supports values like `30d`, `24h`, or `168h`
+
+Example:
+
+```bash
+righthook stats
+```
+
+Example output:
+
+```text
+◇ Righthook stats
+
+Last 30 runs:
+  Average pre-commit: 1.2s
+  Average pre-push:   8.4s
+  Cache hit rate:     72%
+
+Slowest jobs:
+  typecheck   6.8s avg
+  test        4.1s avg
+  lint        1.2s avg
 ```
 
 <div align="center">

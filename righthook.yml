@@ -12,6 +12,11 @@ safety:
     partial_staging: preserve
     unstaged_strategy: stash
     on_conflict: explain
+
+stats:
+  enabled: true
+  retention: 30d
+    
 hooks:
     pre-commit:
         jobs:

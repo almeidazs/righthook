@@ -70,7 +70,7 @@ func Init(raw cli.InitOptions, rt cli.Runtime) error {
 
 	gitignoreAdditions := []string{}
 	if rec.UpdateGitIgnore {
-		gitignoreAdditions = []string{".righthook/cache", "righthook.local.yml"}
+		gitignoreAdditions = []string{".righthook/cache", ".righthook/stats.json", "righthook.local.yml"}
 	}
 	plan := git.BuildInstallPlan(
 		opts.ConfigPath,

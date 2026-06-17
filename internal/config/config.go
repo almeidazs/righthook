@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	semver "github.com/Masterminds/semver/v3"
 	koanftoml "github.com/knadh/koanf/parsers/toml/v2"
@@ -19,6 +21,7 @@ type File struct {
 	Output  OutputConfig    `json:"output" yaml:"output" toml:"output"`
 	Cache   CacheConfig     `json:"cache" yaml:"cache" toml:"cache"`
 	Policy  PolicyConfig    `json:"policy" yaml:"policy" toml:"policy"`
+	Stats   StatsConfig     `json:"stats" yaml:"stats" toml:"stats"`
 	Safety  SafetyConfig    `json:"safety" yaml:"safety" toml:"safety"`
 	Hooks   map[string]Hook `json:"hooks,omitempty" yaml:"hooks,omitempty" toml:"hooks,omitempty"`
 }
@@ -40,6 +43,11 @@ type PolicyConfig struct {
 	RequireInstalled bool     `json:"require_installed,omitempty" yaml:"require_installed,omitempty" toml:"require_installed,omitempty"`
 	RequiredHooks    []string `json:"required_hooks,omitempty" yaml:"required_hooks,omitempty" toml:"required_hooks,omitempty"`
 	AllowSkip        string   `json:"allow_skip,omitempty" yaml:"allow_skip,omitempty" toml:"allow_skip,omitempty"`
+}
+
+type StatsConfig struct {
+	Enabled   bool   `json:"enabled,omitempty" yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+	Retention string `json:"retention,omitempty" yaml:"retention,omitempty" toml:"retention,omitempty"`
 }
 
 type SafetyConfig struct {
@@ -107,6 +115,9 @@ func WithDefaults(cfg File) File {
 	}
 	if strings.TrimSpace(cfg.Cache.Dir) == "" {
 		cfg.Cache.Dir = defaults.Cache.Dir
+	}
+	if strings.TrimSpace(cfg.Stats.Retention) == "" {
+		cfg.Stats.Retention = "30d"
 	}
 	if cfg.Safety == (SafetyConfig{}) {
 		cfg.Safety = defaults.Safety
@@ -265,6 +276,11 @@ func Validate(cfg File) error {
 	if allowSkip := strings.TrimSpace(cfg.Policy.AllowSkip); allowSkip != "" && !validPolicyAllowSkip[allowSkip] {
 		return fmt.Errorf("unsupported policy.allow_skip %q", cfg.Policy.AllowSkip)
 	}
+	if retention := strings.TrimSpace(cfg.Stats.Retention); retention != "" {
+		if _, err := ParseHumanDuration(retention); err != nil {
+			return fmt.Errorf("invalid stats.retention %q: %w", cfg.Stats.Retention, err)
+		}
+	}
 	if constraint := strings.TrimSpace(cfg.Policy.RequiredVersion); constraint != "" {
 		if _, err := semver.NewConstraint(constraint); err != nil {
 			return fmt.Errorf("invalid policy.required_version %q: %w", cfg.Policy.RequiredVersion, err)
@@ -327,4 +343,19 @@ func validateHookName(name string) error {
 	default:
 		return fmt.Errorf("unsupported hook %q", name)
 	}
+}
+
+func ParseHumanDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	if strings.HasSuffix(value, "d") {
+		n, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(value)
 }

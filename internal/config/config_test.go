@@ -57,6 +57,7 @@ func TestValidateRejectsInvalidPolicyValues(t *testing.T) {
 	cfg.Policy.RequiredVersion = "wat"
 	cfg.Policy.AllowSkip = "maybe"
 	cfg.Policy.RequiredHooks = []string{"post-merge"}
+	cfg.Stats.Retention = "tomorrow"
 
 	if err := Validate(cfg); err == nil {
 		t.Fatalf("expected validation error for invalid policy values")
